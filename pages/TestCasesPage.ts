@@ -29,9 +29,34 @@ export class TestCasesPage {
     });
   }
 
+  /** Ubica la fila por título, edita el título en /testcases/:id/edit y guarda. */
+  async editTestCase(title: string, newTitle: string) {
+    await test.step(`Editar caso de prueba "${title}" → "${newTitle}"`, async () => {
+      await this.page.getByRole("row", { name: title }).getByTestId("testcase-edit-button").click();
+      await this.page.waitForURL("**/testcases/*/edit");
+      await this.page.getByTestId("testcase-title-input").fill(newTitle);
+      await this.page.getByTestId("testcase-submit-button").click();
+      await this.page.waitForURL("**/testcases");
+    });
+  }
+
+  /** Ubica la fila por título, clickea "Eliminar" y confirma el modal. */
+  async deleteTestCase(title: string) {
+    await test.step(`Borrar caso de prueba "${title}"`, async () => {
+      await this.page.getByRole("row", { name: title }).getByTestId("testcase-delete-button").click();
+      await this.page.getByTestId("confirm-accept-button").click();
+    });
+  }
+
   async expectTestCaseVisible(title: string) {
     await test.step(`Verificar que "${title}" aparece en el listado`, async () => {
       await expect(this.page.getByText(title, { exact: true }).first()).toBeVisible();
+    });
+  }
+
+  async expectTestCaseNotVisible(title: string) {
+    await test.step(`Verificar que "${title}" ya no aparece en el listado`, async () => {
+      await expect(this.page.getByText(title, { exact: true })).toHaveCount(0);
     });
   }
 }

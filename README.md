@@ -51,12 +51,14 @@ tests/
   auth.setup.ts               → loguea una vez por UI y guarda la sesión (storageState)
   apiAuth.setup.ts            → pide un token de API una sola vez para toda la corrida
   auth/login.spec.ts          → prueba el login en sí (corre sin sesión previa)
-  requirements/*.spec.ts      → requiere sesión (storageState)
+  requirements/*.spec.ts      → crear + editar/borrar (requiere sesión, storageState)
   features/*.spec.ts          → ídem
   testsuites/*.spec.ts        → ídem
-  testruns/*.spec.ts          → ídem
-  testcases/*.spec.ts         → ídem
+  testruns/*.spec.ts          → solo crear (no hay UI de editar/borrar ejecuciones en MINOS)
+  testcases/*.spec.ts         → crear + editar/borrar
   issues/*.spec.ts            → ídem
+  testplans/*.spec.ts         → ídem
+  notes/*.spec.ts             → ídem
 pages/                        → Page Objects (un archivo por pantalla/componente de la app)
 fixtures/                     → fixtures de Playwright (datos de test vía API)
 support/
@@ -73,9 +75,11 @@ playwright/.auth/             → sesión + token guardados (gitignoreado, se re
 
 ## Nota sobre selectores: `data-testid`
 
-Los componentes de formulario compartidos de MINOS (`InputField`, `TextareaField`, `SelectField`, `ButtonPrimary`, `ButtonSecondary`, `ButtonDanger`, `TagsInput`, y las acciones de `Modal`) ahora soportan `data-testid` — se agregó como parte de esta suite, porque los inputs no asociaban `<label>` con `<input>` y no había forma estable de apuntarles sin depender de texto traducible o del orden de los campos. Los Page Objects nuevos (`FeaturesPage`, `TestSuitesPage`, `TestRunsPage`, `TestCasesPage`, `IssuesPage`) usan `page.getByTestId(...)`. `TestCaseForm` (el form más grande de la app) está completamente instrumentado, aunque los tests hoy solo ejercitan el camino mínimo (título + un paso).
+Los componentes de formulario compartidos de MINOS (`InputField`, `TextareaField`, `SelectField`, `ButtonPrimary`, `ButtonSecondary`, `ButtonDanger`, `TagsInput`, y las acciones de `Modal`/`ConfirmationModal`) soportan `data-testid` — se agregó como parte de esta suite, porque los inputs no asociaban `<label>` con `<input>` y no había forma estable de apuntarles sin depender de texto traducible o del orden de los campos. Las 8 entidades del producto (Requerimientos, Funcionalidades, Suites, Casos de Prueba, Ejecuciones, Issues, Planes de Prueba, Notas) están instrumentadas para crear/editar/borrar (Ejecuciones solo tiene "crear": MINOS no tiene UI de edición ni borrado para esa entidad, es un registro de ejecución). `TestCaseForm` (el form más grande de la app) está completamente instrumentado, aunque los tests hoy solo ejercitan el camino mínimo (título + un paso).
 
-`RequirementsPage` y `LoginPage` son anteriores a ese cambio y todavía usan atributos `name` (`input[name="title"]`), que también son estables en esos formularios puntuales. Si los tocás, considerá migrarlos a `data-testid` para que todo el repo siga un solo patrón.
+`RequirementsPage` y `LoginPage` usan atributos `name` (`input[name="title"]`) para los campos de texto porque esas dos pantallas ya eran estables así antes de sumar `data-testid`; sus botones de acción (editar/borrar en el listado) sí usan `data-testid`. Igual con `TestPlansPage`: el form de alta/edición usa `name`, pero las acciones del listado usan `data-testid`. Si tocás alguna de estas pantallas, considerá migrar los campos de texto a `data-testid` para que todo el repo siga un solo patrón.
+
+**Borrar** en casi todos los flujos pasa por el mismo componente genérico (`ConfirmationModal`/`useConfirm()`), así que un solo par de testid cubre la confirmación en toda la app: `confirm-accept-button` / `confirm-cancel-button`.
 
 Convención de nombres usada: `{entidad}-{campo}-{tipo}` (ej. `feature-title-input`, `testrun-save-button`).
 
@@ -87,11 +91,12 @@ Convención de nombres usada: `{entidad}-{campo}-{tipo}` (ej. `feature-title-inp
 
 ## Bugs reales encontrados armando esta suite (ya arreglados en `qa-pal-mvp`)
 
-Automatizar esto encontró 3 bugs genuinos de la app, no errores de los tests:
+Automatizar esto encontró 4 bugs genuinos de la app, no errores de los tests:
 
 1. **Login con contraseña incorrecta mostraba "tu sesión expiró" en vez de "credenciales inválidas"** — el interceptor global de 401 en `fetchWithAuth.js` no distinguía un 401 del propio login de un 401 de sesión vencida.
 2. **"Crear Issue con IA" tiraba 500 siempre** — usaba `TestRun` sin importarlo, y además el chequeo de permisos estaba armado para un modelo con `project_id` propio, que `TestRunResult` no tiene.
 3. **Borrar un proyecto con casos de prueba, planes, ejecuciones, issues o notas tiraba 500** — esas 5 tablas no tenían `ON DELETE CASCADE` hacia `projects` (a diferencia de `features`/`requirements`, que sí).
+4. **Borrar un caso de prueba desde el listado pedía confirmar dos veces** — `TestCaseList.jsx` mostraba su propio `useConfirm()` antes de llamar al DELETE, pero el `ActionButtons` compartido que renderiza el botón *también* pide confirmación antes de invocar `onDelete`. El primer clic en "Eliminar" solo cerraba el primer diálogo y abría uno idéntico por debajo; recién el segundo clic borraba de verdad. Se sacó la confirmación duplicada de `TestCaseList` y se le pasó el mensaje específico a `ActionButtons` vía `confirmMessage`.
 
 ## Sobre la concurrencia entre tests
 
@@ -99,7 +104,9 @@ Todos los tests pegan contra la misma cuenta de demo compartida (`pro@qapal.loca
 
 ## Pendiente / ideas para crecer esto
 
-- Sumar Page Objects para Planes de Prueba y Notas.
-- Flujos de edición/borrado (hoy todo es "crear") y tests de permisos por rol (tester/builder/stakeholder, no solo el owner Pro).
+- Gestión de proyecto por UI: crear/editar proyecto, invitar miembro.
+- Tests de permisos por rol (tester/builder/stakeholder, no solo el owner Pro).
+- Ciclo de vida de una Ejecución: marcar resultado de un caso, finalizar la ejecución.
+- Flujos con IA (generación de casos/issues) — quedan afuera por ahora porque consumen créditos reales.
 - CI: correr `npm test` en GitHub Actions contra un `docker compose up` efímero.
 - Cross-browser: ya está preparado en `playwright.config.ts` (proyectos de firefox/webkit comentados), solo hay que descomentar.

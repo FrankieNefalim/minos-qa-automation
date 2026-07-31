@@ -44,9 +44,34 @@ export class RequirementsPage {
     });
   }
 
+  /** Ubica la fila por título en la tabla, edita el título y guarda. */
+  async editRequirement(title: string, newTitle: string) {
+    await test.step(`Editar requerimiento "${title}" → "${newTitle}"`, async () => {
+      await this.page.getByRole("row", { name: title }).getByTestId("requirement-edit-button").click();
+      await this.page.waitForURL("**/requirements/*/edit");
+      await this.page.locator('input[name="title"]').fill(newTitle);
+      await this.page.locator('form button[type="submit"]').click();
+      await this.page.waitForURL("**/requirements");
+    });
+  }
+
+  /** Ubica la fila por título, clickea "Eliminar" y confirma el modal. */
+  async deleteRequirement(title: string) {
+    await test.step(`Borrar requerimiento "${title}"`, async () => {
+      await this.page.getByRole("row", { name: title }).getByTestId("requirement-delete-button").click();
+      await this.page.getByTestId("confirm-accept-button").click();
+    });
+  }
+
   async expectRequirementVisible(title: string) {
     await test.step(`Verificar que "${title}" aparece en el listado`, async () => {
       await expect(this.page.getByText(title, { exact: true }).first()).toBeVisible();
+    });
+  }
+
+  async expectRequirementNotVisible(title: string) {
+    await test.step(`Verificar que "${title}" ya no aparece en el listado`, async () => {
+      await expect(this.page.getByText(title, { exact: true })).toHaveCount(0);
     });
   }
 }
