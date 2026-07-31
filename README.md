@@ -25,37 +25,57 @@ npm run test:debug    # paso a paso
 npm run report        # abre el último reporte HTML
 ```
 
+> ⚠️ **Rate limit de login**: `/auth/login` en MINOS permite 5 intentos por minuto (por IP+email) — es una protección real del backend, no algo para debilitar. Una corrida completa de la suite usa 3 de esos 5 (login de UI, el test de login inválido, y el token de API). Si corrés la suite dos veces seguidas en menos de un minuto, la segunda puede toparse con el límite — `auth.setup.ts` y `support/apiClient.ts` ya reintentan con backoff, pero si corrés todo muy seguido igual puede fallar. Esperá ~60s entre corridas completas si estás iterando rápido.
+
 ## Cómo está armado
 
 ```
 tests/
-  auth.setup.ts              → loguea una vez por UI y guarda la sesión (storageState)
-  auth/login.spec.ts         → prueba el login en sí (corre sin sesión previa)
-  requirements/*.spec.ts     → tests que ya arrancan logueados
-pages/                       → Page Objects (un archivo por pantalla/componente de la app)
-fixtures/                    → fixtures de Playwright (datos de test vía API)
+  auth.setup.ts               → loguea una vez por UI y guarda la sesión (storageState)
+  apiAuth.setup.ts            → pide un token de API una sola vez para toda la corrida
+  auth/login.spec.ts          → prueba el login en sí (corre sin sesión previa)
+  requirements/*.spec.ts      → requiere sesión (storageState)
+  features/*.spec.ts          → ídem
+  testsuites/*.spec.ts        → ídem
+  testruns/*.spec.ts          → ídem
+pages/                        → Page Objects (un archivo por pantalla/componente de la app)
+fixtures/                     → fixtures de Playwright (datos de test vía API)
 support/
-  env.ts                     → config centralizada (URLs, credenciales)
-  apiClient.ts                → cliente HTTP contra la API de MINOS, para setup/teardown de datos
-playwright/.auth/            → sesión guardada (gitignoreado, se regenera solo)
+  env.ts                      → config centralizada (URLs, credenciales)
+  apiClient.ts                 → cliente HTTP contra la API de MINOS, para setup/teardown de datos
+playwright/.auth/             → sesión + token guardados (gitignoreado, se regenera solo)
 ```
 
-**Patrón de auth**: en vez de loguear por UI en cada test (lento), `auth.setup.ts` loguea una sola vez al arrancar la suite y guarda cookies/localStorage. Los tests del proyecto `chromium` arrancan directo con sesión activa. El propio flujo de login se prueba aparte, en el proyecto `chromium-no-auth`, que sí arranca sin sesión (ver `playwright.config.ts`).
+**Patrón de auth (UI)**: en vez de loguear por UI en cada test (lento), `auth.setup.ts` loguea una sola vez al arrancar la suite y guarda cookies/localStorage. Los tests bajo `chromium` arrancan directo con sesión activa. El propio flujo de login se prueba aparte, en el proyecto `chromium-no-auth`, que sí arranca sin sesión (ver `playwright.config.ts`).
 
-**Patrón de datos de test**: para tests que necesitan un proyecto/feature ya creados (como crear un requerimiento), no dependas de datos cargados a mano en la cuenta de demo — usá el fixture `testProject` (`fixtures/testProject.fixture.ts`), que crea un proyecto + feature por API antes del test y los borra después. Mantiene los tests independientes entre sí y repetibles.
+**Patrón de auth (API)**: `apiAuth.setup.ts` pide un access_token una sola vez y lo guarda en `playwright/.auth/api-token.json`. El fixture `apiClient` (worker-scoped, en `fixtures/testProject.fixture.ts`) lo lee de ahí en vez de loguear de nuevo por worker — clave para no chocar con el rate-limit cuando corren varios workers en paralelo.
 
-## Nota sobre selectores
+**Patrón de datos de test**: para tests que necesitan un proyecto/feature/suite ya creados, no dependas de datos cargados a mano en la cuenta de demo — usá el fixture `testProject` (`fixtures/testProject.fixture.ts`), que crea un proyecto + feature + test suite por API antes del test y borra el proyecto después. Mantiene los tests independientes entre sí y repetibles. Los códigos de proyecto se generan al azar (con reintento si chocan) porque MINOS deriva el código del nombre y lo trunca a 2 caracteres — dos proyectos con nombres parecidos pueden derivar el mismo código.
 
-Los inputs de MINOS hoy no asocian el `<label>` con su `<input>` (falta `id`/`htmlFor`), así que `getByLabel()` de Playwright no es confiable en esta app todavía. Los Page Objects usan atributos `name` (`input[name="title"]`, etc.), que sí son estables porque los define el propio formulario. Si en algún momento se agregan `data-testid` a los componentes de UI (`InputField`, `SelectField`, `ButtonPrimary`...), migrar los selectores sería una mejora de una sola vez, no haría falta tocar cada test.
+## Nota sobre selectores: `data-testid`
+
+Los componentes de formulario compartidos de MINOS (`InputField`, `TextareaField`, `SelectField`, `ButtonPrimary`, `ButtonSecondary`, `ButtonDanger`, y las acciones de `Modal`) ahora soportan `data-testid` — se agregó como parte de esta suite, porque los inputs no asociaban `<label>` con `<input>` y no había forma estable de apuntarles sin depender de texto traducible o del orden de los campos. Los Page Objects nuevos (`FeaturesPage`, `TestSuitesPage`, `TestRunsPage`) usan `page.getByTestId(...)`.
+
+`RequirementsPage` y `LoginPage` son anteriores a ese cambio y todavía usan atributos `name` (`input[name="title"]`), que también son estables en esos formularios puntuales. Si los tocás, considerá migrarlos a `data-testid` para que todo el repo siga un solo patrón.
+
+Convención de nombres usada: `{entidad}-{campo}-{tipo}` (ej. `feature-title-input`, `testrun-save-button`).
 
 ## Agregar un test nuevo
 
-1. Si la pantalla es nueva, sumá un Page Object en `pages/` (mirá `RequirementsPage.ts` como referencia).
+1. Si la pantalla es nueva y usa los componentes compartidos de formulario, agregales `data-testid` en `qa-pal-mvp` (son props que ya se forwardean, un solo lugar por componente) y armá el Page Object acá apuntando a esos testid.
 2. Si el test necesita sesión, ponelo en una carpeta bajo `tests/` — corre automáticamente con el storageState. Si el test necesita arrancar deslogueado, agregalo al patrón `testIgnore`/`testMatch` de `chromium-no-auth` en `playwright.config.ts`.
-3. Si necesitás datos previos (proyecto, feature, requerimiento, etc.), extendé `support/apiClient.ts` con el endpoint que haga falta y armá un fixture nuevo siguiendo el patrón de `testProject.fixture.ts`.
+3. Si necesitás datos previos (proyecto, feature, suite, requerimiento, etc.), extendé `support/apiClient.ts` con el endpoint que haga falta. Si es un dato común a muchos tests, sumalo al fixture `testProject`; si es específico de un flujo, creá los datos dentro del test mismo usando `apiClient` (fixture worker-scoped, ya autenticado).
+
+## Bugs reales encontrados armando esta suite (ya arreglados en `qa-pal-mvp`)
+
+Automatizar esto encontró 3 bugs genuinos de la app, no errores de los tests:
+
+1. **Login con contraseña incorrecta mostraba "tu sesión expiró" en vez de "credenciales inválidas"** — el interceptor global de 401 en `fetchWithAuth.js` no distinguía un 401 del propio login de un 401 de sesión vencida.
+2. **"Crear Issue con IA" tiraba 500 siempre** — usaba `TestRun` sin importarlo, y además el chequeo de permisos estaba armado para un modelo con `project_id` propio, que `TestRunResult` no tiene.
+3. **Borrar un proyecto con casos de prueba, planes, ejecuciones, issues o notas tiraba 500** — esas 5 tablas no tenían `ON DELETE CASCADE` hacia `projects` (a diferencia de `features`/`requirements`, que sí).
 
 ## Pendiente / ideas para crecer esto
 
-- Sumar más Page Objects a medida que se automatizan otras pantallas (Casos de Prueba, Suites, Planes, Ejecuciones, Issues).
+- Sumar Page Objects para Casos de Prueba (formulario grande, sin `data-testid` todavía) e Issues.
 - CI: correr `npm test` en GitHub Actions contra un `docker compose up` efímero.
 - Cross-browser: ya está preparado en `playwright.config.ts` (proyectos de firefox/webkit comentados), solo hay que descomentar.

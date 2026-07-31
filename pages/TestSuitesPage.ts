@@ -1,0 +1,23 @@
+import { expect, type Page } from "@playwright/test";
+
+export class TestSuitesPage {
+  constructor(private readonly page: Page) {}
+
+  async goto() {
+    await this.page.goto("/testsuites");
+  }
+
+  async createSuite(data: { name: string; description: string }) {
+    await this.page.getByTestId("testsuite-new-button").click();
+    await this.page.getByTestId("testsuite-name-input").fill(data.name);
+    // La descripción es obligatoria en el form (validación de cliente),
+    // aunque el backend la acepte vacía.
+    await this.page.getByTestId("testsuite-description-textarea").fill(data.description);
+    await this.page.getByTestId("testsuite-save-button").click();
+    await expect(this.page.getByTestId("testsuite-save-button")).toBeHidden();
+  }
+
+  async expectSuiteVisible(name: string) {
+    await expect(this.page.getByText(name, { exact: true }).first()).toBeVisible();
+  }
+}

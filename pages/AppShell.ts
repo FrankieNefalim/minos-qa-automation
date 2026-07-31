@@ -8,10 +8,11 @@ export class AppShell {
   constructor(private readonly page: Page) {}
 
   /** Cambia el proyecto activo por su ID (más confiable que matchear texto,
-   *  porque la opción muestra "{code}-0000 · {nombre}", no solo el nombre). */
+   *  porque la opción muestra "{code}-0000 · {nombre}", no solo el nombre).
+   *  Cambiar de proyecto redirige a /dashboard — llamalo antes de navegar
+   *  a la pantalla que en realidad querés probar. */
   async selectProject(projectId: number) {
-    const select = this.page.locator("header select");
-    await select.selectOption(String(projectId));
+    await this.page.getByTestId("project-switcher").selectOption(String(projectId));
   }
 
   async gotoRequirements() {
