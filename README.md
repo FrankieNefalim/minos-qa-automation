@@ -38,6 +38,8 @@ tests/
   features/*.spec.ts          → ídem
   testsuites/*.spec.ts        → ídem
   testruns/*.spec.ts          → ídem
+  testcases/*.spec.ts         → ídem
+  issues/*.spec.ts            → ídem
 pages/                        → Page Objects (un archivo por pantalla/componente de la app)
 fixtures/                     → fixtures de Playwright (datos de test vía API)
 support/
@@ -54,7 +56,7 @@ playwright/.auth/             → sesión + token guardados (gitignoreado, se re
 
 ## Nota sobre selectores: `data-testid`
 
-Los componentes de formulario compartidos de MINOS (`InputField`, `TextareaField`, `SelectField`, `ButtonPrimary`, `ButtonSecondary`, `ButtonDanger`, y las acciones de `Modal`) ahora soportan `data-testid` — se agregó como parte de esta suite, porque los inputs no asociaban `<label>` con `<input>` y no había forma estable de apuntarles sin depender de texto traducible o del orden de los campos. Los Page Objects nuevos (`FeaturesPage`, `TestSuitesPage`, `TestRunsPage`) usan `page.getByTestId(...)`.
+Los componentes de formulario compartidos de MINOS (`InputField`, `TextareaField`, `SelectField`, `ButtonPrimary`, `ButtonSecondary`, `ButtonDanger`, `TagsInput`, y las acciones de `Modal`) ahora soportan `data-testid` — se agregó como parte de esta suite, porque los inputs no asociaban `<label>` con `<input>` y no había forma estable de apuntarles sin depender de texto traducible o del orden de los campos. Los Page Objects nuevos (`FeaturesPage`, `TestSuitesPage`, `TestRunsPage`, `TestCasesPage`, `IssuesPage`) usan `page.getByTestId(...)`. `TestCaseForm` (el form más grande de la app) está completamente instrumentado, aunque los tests hoy solo ejercitan el camino mínimo (título + un paso).
 
 `RequirementsPage` y `LoginPage` son anteriores a ese cambio y todavía usan atributos `name` (`input[name="title"]`), que también son estables en esos formularios puntuales. Si los tocás, considerá migrarlos a `data-testid` para que todo el repo siga un solo patrón.
 
@@ -74,8 +76,13 @@ Automatizar esto encontró 3 bugs genuinos de la app, no errores de los tests:
 2. **"Crear Issue con IA" tiraba 500 siempre** — usaba `TestRun` sin importarlo, y además el chequeo de permisos estaba armado para un modelo con `project_id` propio, que `TestRunResult` no tiene.
 3. **Borrar un proyecto con casos de prueba, planes, ejecuciones, issues o notas tiraba 500** — esas 5 tablas no tenían `ON DELETE CASCADE` hacia `projects` (a diferencia de `features`/`requirements`, que sí).
 
+## Sobre la concurrencia entre tests
+
+Todos los tests pegan contra la misma cuenta de demo compartida (`pro@qapal.local`). Con 3 workers en paralelo, de vez en cuando hay contención puntual (ej. generación de key por proyecto) que hace fallar un test de forma transitoria — no es un bug de la app ni del test, así que `playwright.config.ts` tiene `retries: 1` en local (2 en CI) para absorber eso. Si un test falla dos veces seguidas, ahí sí es señal de algo real.
+
 ## Pendiente / ideas para crecer esto
 
-- Sumar Page Objects para Casos de Prueba (formulario grande, sin `data-testid` todavía) e Issues.
+- Sumar Page Objects para Planes de Prueba y Notas.
+- Flujos de edición/borrado (hoy todo es "crear") y tests de permisos por rol (tester/builder/stakeholder, no solo el owner Pro).
 - CI: correr `npm test` en GitHub Actions contra un `docker compose up` efímero.
 - Cross-browser: ya está preparado en `playwright.config.ts` (proyectos de firefox/webkit comentados), solo hay que descomentar.

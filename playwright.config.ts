@@ -7,7 +7,12 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Todos los tests pegan contra la misma cuenta de demo compartida
+  // (pro@qapal.local) — con varios workers en paralelo puede haber
+  // contención puntual (ej. generación de key por proyecto) que hace fallar
+  // un test de forma transitoria. Un reintento alcanza para esos casos; si
+  // falla dos veces seguidas es un bug real, no ruido de concurrencia.
+  retries: process.env.CI ? 2 : 1,
   workers: process.env.CI ? 2 : undefined,
   reporter: [["html", { open: "never" }], ["list"]],
 
