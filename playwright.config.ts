@@ -14,7 +14,11 @@ export default defineConfig({
   // falla dos veces seguidas es un bug real, no ruido de concurrencia.
   retries: process.env.CI ? 2 : 1,
   workers: process.env.CI ? 2 : undefined,
-  reporter: [["html", { open: "never" }], ["list"]],
+  reporter: [
+    ["html", { open: "never" }],
+    ["list"],
+    ["allure-playwright", { resultsDir: "./allure-results", detail: true, suiteTitle: false }],
+  ],
 
   use: {
     baseURL: process.env.BASE_URL || "http://localhost:5173",

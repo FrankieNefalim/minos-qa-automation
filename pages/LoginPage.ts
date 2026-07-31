@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
  * Page Object de /login.
@@ -24,25 +24,33 @@ export class LoginPage {
   }
 
   async goto() {
-    await this.page.goto("/login");
+    await test.step("Ir a /login", async () => {
+      await this.page.goto("/login");
+    });
   }
 
   async login(email: string, password: string) {
-    await this.emailInput.fill(email);
-    await this.passwordInput.fill(password);
-    await this.submitButton.click();
+    await test.step(`Completar login (${email})`, async () => {
+      await this.emailInput.fill(email);
+      await this.passwordInput.fill(password);
+      await this.submitButton.click();
+    });
   }
 
   /** Login y espera a que la SPA navegue lejos de /login (dashboard, admin, onboarding, etc.). */
   async loginAndWaitForRedirect(email: string, password: string) {
-    await this.login(email, password);
-    await this.page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 });
+    await test.step("Login y esperar redirect fuera de /login", async () => {
+      await this.login(email, password);
+      await this.page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 });
+    });
   }
 
   async expectError(messageSubstring?: string | RegExp) {
-    await expect(this.errorMessage).toBeVisible();
-    if (messageSubstring) {
-      await expect(this.errorMessage).toContainText(messageSubstring);
-    }
+    await test.step("Verificar mensaje de error de login", async () => {
+      await expect(this.errorMessage).toBeVisible();
+      if (messageSubstring) {
+        await expect(this.errorMessage).toContainText(messageSubstring);
+      }
+    });
   }
 }

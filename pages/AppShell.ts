@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { test, type Page } from "@playwright/test";
 
 /**
  * Elementos de layout compartidos por casi toda la app logueada:
@@ -12,10 +12,14 @@ export class AppShell {
    *  Cambiar de proyecto redirige a /dashboard — llamalo antes de navegar
    *  a la pantalla que en realidad querés probar. */
   async selectProject(projectId: number) {
-    await this.page.getByTestId("project-switcher").selectOption(String(projectId));
+    await test.step(`Seleccionar proyecto activo (id ${projectId})`, async () => {
+      await this.page.getByTestId("project-switcher").selectOption(String(projectId));
+    });
   }
 
   async gotoRequirements() {
-    await this.page.goto("/requirements");
+    await test.step("Ir a /requirements", async () => {
+      await this.page.goto("/requirements");
+    });
   }
 }

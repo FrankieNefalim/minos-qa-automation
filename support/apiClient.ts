@@ -1,4 +1,4 @@
-import { request, type APIRequestContext } from "@playwright/test";
+import { request, test, type APIRequestContext } from "@playwright/test";
 import { env } from "./env";
 
 const CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -35,27 +35,29 @@ export class ApiClient {
    * workers logueando en paralelo alcanzan a agotar el rate-limit.
    */
   static async fetchToken(email: string, password: string): Promise<string> {
-    const ctx = await request.newContext({ baseURL: env.apiURL });
-    try {
-      let lastError = "";
-      for (let attempt = 1; attempt <= 5; attempt++) {
-        const res = await ctx.post("/auth/login", {
-          form: { username: email, password },
-        });
-        if (res.ok()) {
-          const body = await res.json();
-          return body.access_token as string;
+    return test.step(`API: obtener token para ${email}`, async () => {
+      const ctx = await request.newContext({ baseURL: env.apiURL });
+      try {
+        let lastError = "";
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          const res = await ctx.post("/auth/login", {
+            form: { username: email, password },
+          });
+          if (res.ok()) {
+            const body = await res.json();
+            return body.access_token as string;
+          }
+          if (res.status() !== 429) {
+            throw new Error(`Login de API falló (${res.status()}): ${await res.text()}`);
+          }
+          lastError = await res.text();
+          await sleep(attempt * 2000); // backoff: 2s, 4s, 6s, 8s...
         }
-        if (res.status() !== 429) {
-          throw new Error(`Login de API falló (${res.status()}): ${await res.text()}`);
-        }
-        lastError = await res.text();
-        await sleep(attempt * 2000); // backoff: 2s, 4s, 6s, 8s...
+        throw new Error(`Login de API rate-limiteado tras varios reintentos: ${lastError}`);
+      } finally {
+        await ctx.dispose();
       }
-      throw new Error(`Login de API rate-limiteado tras varios reintentos: ${lastError}`);
-    } finally {
-      await ctx.dispose();
-    }
+    });
   }
 
   /** Construye un cliente a partir de un token ya obtenido (ver fetchToken). */
@@ -76,46 +78,54 @@ export class ApiClient {
    * con otro código al azar si por mala suerte ya existe.
    */
   async createProject(name: string): Promise<{ id: number; name: string; code: string }> {
-    let lastError = "";
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      const code = randomCode();
-      const res = await this.ctx.post("/projects/", {
-        headers: this.authHeaders(),
-        data: { name, code },
-      });
-      if (res.ok()) return res.json();
-      lastError = await res.text();
-      if (!lastError.includes("already exists")) {
-        throw new Error(`No se pudo crear el proyecto de test (${res.status()}): ${lastError}`);
+    return test.step(`API: crear proyecto "${name}"`, async () => {
+      let lastError = "";
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const code = randomCode();
+        const res = await this.ctx.post("/projects/", {
+          headers: this.authHeaders(),
+          data: { name, code },
+        });
+        if (res.ok()) return res.json();
+        lastError = await res.text();
+        if (!lastError.includes("already exists")) {
+          throw new Error(`No se pudo crear el proyecto de test (${res.status()}): ${lastError}`);
+        }
       }
-    }
-    throw new Error(`No se pudo crear el proyecto de test tras varios códigos: ${lastError}`);
+      throw new Error(`No se pudo crear el proyecto de test tras varios códigos: ${lastError}`);
+    });
   }
 
   async createFeature(projectId: number, title: string): Promise<{ id: number; title: string }> {
-    const res = await this.ctx.post("/features", {
-      headers: this.authHeaders(),
-      data: { project_id: projectId, title, description: "Feature creada por la suite de automatización" },
+    return test.step(`API: crear feature "${title}" (proyecto ${projectId})`, async () => {
+      const res = await this.ctx.post("/features", {
+        headers: this.authHeaders(),
+        data: { project_id: projectId, title, description: "Feature creada por la suite de automatización" },
+      });
+      if (!res.ok()) {
+        throw new Error(`No se pudo crear la feature de test (${res.status()}): ${await res.text()}`);
+      }
+      return res.json();
     });
-    if (!res.ok()) {
-      throw new Error(`No se pudo crear la feature de test (${res.status()}): ${await res.text()}`);
-    }
-    return res.json();
   }
 
   async createTestSuite(projectId: number, name: string): Promise<{ id: number; name: string }> {
-    const res = await this.ctx.post("/testsuites/", {
-      headers: this.authHeaders(),
-      data: { project_id: projectId, name },
+    return test.step(`API: crear test suite "${name}" (proyecto ${projectId})`, async () => {
+      const res = await this.ctx.post("/testsuites/", {
+        headers: this.authHeaders(),
+        data: { project_id: projectId, name },
+      });
+      if (!res.ok()) {
+        throw new Error(`No se pudo crear la test suite (${res.status()}): ${await res.text()}`);
+      }
+      return res.json();
     });
-    if (!res.ok()) {
-      throw new Error(`No se pudo crear la test suite (${res.status()}): ${await res.text()}`);
-    }
-    return res.json();
   }
 
   async deleteProject(projectId: number): Promise<void> {
-    await this.ctx.delete(`/projects/${projectId}`, { headers: this.authHeaders() });
+    await test.step(`API: borrar proyecto ${projectId}`, async () => {
+      await this.ctx.delete(`/projects/${projectId}`, { headers: this.authHeaders() });
+    });
   }
 
   async dispose() {

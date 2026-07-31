@@ -22,10 +22,27 @@ npm test              # headless, todos los tests
 npm run test:headed   # con el browser visible
 npm run test:ui       # UI mode de Playwright (recomendado mientras escribís tests nuevos)
 npm run test:debug    # paso a paso
-npm run report        # abre el último reporte HTML
+npm run report        # abre el último reporte HTML de Playwright
+npm run allure:report # genera y abre el reporte de Allure
 ```
 
 > ⚠️ **Rate limit de login**: `/auth/login` en MINOS permite 5 intentos por minuto (por IP+email) — es una protección real del backend, no algo para debilitar. Una corrida completa de la suite usa 3 de esos 5 (login de UI, el test de login inválido, y el token de API). Si corrés la suite dos veces seguidas en menos de un minuto, la segunda puede toparse con el límite — `auth.setup.ts` y `support/apiClient.ts` ya reintentan con backoff, pero si corrés todo muy seguido igual puede fallar. Esperá ~60s entre corridas completas si estás iterando rápido.
+
+## Reporte con Allure
+
+Cada test corre con dos reporters a la vez: el HTML nativo de Playwright (`npm run report`, no necesita nada extra) y Allure (`npm run allure:report`), que arma un reporte navegable con la jerarquía completa de pasos.
+
+- **`npm run allure:generate`** transforma `allure-results/` (lo que va dejando cada corrida) en el HTML final en `allure-report/`.
+- **`npm run allure:open`** lo sirve y abre en el navegador.
+- **`npm run allure:report`** hace las dos cosas seguidas.
+
+> ⚠️ **Allure necesita Java** instalado (JRE 8+) para generar/abrir el reporte — `allure-commandline` es solo un wrapper del `.jar`. `allure-results/` se genera igual sin Java (esa parte la escribe `allure-playwright` en Node puro); lo que no funciona sin Java es el paso de `generate`/`open`. Si te tira error de "java: command not found", instalá un JDK y volvé a intentar.
+
+`allure-results/` y `allure-report/` están gitignoreados — son artefactos de cada corrida, no se versionan.
+
+### Steps en los Page Objects
+
+Todos los métodos públicos de los Page Objects (`pages/*.ts`) y del cliente de API (`support/apiClient.ts`) están envueltos en `test.step(...)`. Esto hace que tanto el reporte de Playwright como el de Allure muestren una jerarquía legible de lo que hizo el test — incluyendo el setup por fixture (crear proyecto/feature/suite por API), no solo las acciones dentro del test — en vez de un log plano de clicks y fills. Si agregás un método nuevo a un Page Object, envolvelo en `test.step("descripción", async () => { ... })` para mantener el mismo patrón.
 
 ## Cómo está armado
 
