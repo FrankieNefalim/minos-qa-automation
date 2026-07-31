@@ -42,7 +42,7 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"], storageState: authFile },
       dependencies: ["setup"],
-      testIgnore: /auth\/login\.spec\.ts/,
+      testIgnore: [/auth\/login\.spec\.ts/, /permissions\/.*\.spec\.ts/],
     },
 
     // El propio flujo de login se prueba sin sesión previa.
@@ -50,6 +50,15 @@ export default defineConfig({
       name: "chromium-no-auth",
       use: { ...devices["Desktop Chrome"] },
       testMatch: /auth\/login\.spec\.ts/,
+    },
+
+    // Tests de permisos por rol: necesitan loguear como free@qapal.local
+    // (el "miembro invitado"), no como el owner PRO.
+    {
+      name: "chromium-free-user",
+      use: { ...devices["Desktop Chrome"], storageState: "playwright/.auth/free-user.json" },
+      dependencies: ["setup"],
+      testMatch: /permissions\/.*\.spec\.ts/,
     },
 
     // Descomentar para correr cross-browser:

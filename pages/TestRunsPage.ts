@@ -27,4 +27,12 @@ export class TestRunsPage {
       await expect(this.page.getByText(name, { exact: true }).first()).toBeVisible();
     });
   }
+
+  /** Ubica la fila por nombre de la ejecución y abre su detalle. */
+  async openRun(name: string) {
+    await test.step(`Abrir el detalle de la ejecución "${name}"`, async () => {
+      await this.page.getByRole("row", { name }).getByTestId("testrun-row-link").click();
+      await this.page.waitForURL("**/testruns/*");
+    });
+  }
 }

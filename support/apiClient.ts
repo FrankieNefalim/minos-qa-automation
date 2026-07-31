@@ -122,6 +122,68 @@ export class ApiClient {
     });
   }
 
+  async createTestCase(
+    projectId: number,
+    title: string,
+    step: string
+  ): Promise<{ id: number; title: string }> {
+    return test.step(`API: crear caso de prueba "${title}" (proyecto ${projectId})`, async () => {
+      const res = await this.ctx.post("/testcases", {
+        headers: this.authHeaders(),
+        data: { project_id: projectId, title, steps: [step] },
+      });
+      if (!res.ok()) {
+        throw new Error(`No se pudo crear el caso de prueba (${res.status()}): ${await res.text()}`);
+      }
+      return res.json();
+    });
+  }
+
+  /** Vincula un caso de prueba ya creado a una suite (necesario para que
+   *  "Sincronizar" en una Ejecución lo traiga como resultado). */
+  async addTestCaseToSuite(suiteId: number, testCaseId: number): Promise<void> {
+    await test.step(`API: agregar caso de prueba ${testCaseId} a la suite ${suiteId}`, async () => {
+      const res = await this.ctx.post(`/testsuites/${suiteId}/add_test_case`, {
+        headers: this.authHeaders(),
+        data: { test_case_id: testCaseId },
+      });
+      if (!res.ok()) {
+        throw new Error(`No se pudo agregar el caso a la suite (${res.status()}): ${await res.text()}`);
+      }
+    });
+  }
+
+  /** Invita/agrega un miembro a un proyecto. Si el email ya es un usuario
+   *  activo (ej. free@qapal.local), queda agregado directo con ese rol
+   *  (status "added"), sin pasar por el flujo de email/token. */
+  async inviteMember(
+    projectId: number,
+    email: string,
+    role: "manager" | "builder" | "tester" | "stakeholder"
+  ): Promise<{ ok: boolean; status: string }> {
+    return test.step(`API: invitar ${email} (${role}) al proyecto ${projectId}`, async () => {
+      const res = await this.ctx.post(`/projects/${projectId}/invite`, {
+        headers: this.authHeaders(),
+        params: { email, role },
+      });
+      if (!res.ok()) {
+        throw new Error(`No se pudo invitar al miembro (${res.status()}): ${await res.text()}`);
+      }
+      return res.json();
+    });
+  }
+
+  /** Busca el id de un proyecto por nombre exacto — útil para limpiar por
+   *  API un proyecto que se creó por UI (donde no tenemos el id a mano). */
+  async findProjectIdByName(name: string): Promise<number | null> {
+    return test.step(`API: buscar proyecto "${name}" por nombre`, async () => {
+      const res = await this.ctx.get("/projects/", { headers: this.authHeaders() });
+      if (!res.ok()) return null;
+      const projects: Array<{ id: number; name: string }> = await res.json();
+      return projects.find((p) => p.name === name)?.id ?? null;
+    });
+  }
+
   async deleteProject(projectId: number): Promise<void> {
     await test.step(`API: borrar proyecto ${projectId}`, async () => {
       await this.ctx.delete(`/projects/${projectId}`, { headers: this.authHeaders() });

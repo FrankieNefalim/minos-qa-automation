@@ -19,6 +19,16 @@ export const env = {
     email: process.env.PRO_USER_EMAIL || "pro@qapal.local",
     password: process.env.PRO_USER_PASSWORD || "Pro123!",
   },
+
+  // Segundo usuario seedeado (plan free) — se usa como "el invitado"/miembro
+  // en tests de gestión de equipo y de permisos por rol. Al invitarlo a un
+  // proyecto de pro@qapal.local con un rol específico (tester/builder/
+  // stakeholder), MINOS lo agrega directo (es un usuario activo), sin
+  // necesitar el flujo de email/token.
+  freeUser: {
+    email: process.env.FREE_USER_EMAIL || "free@qapal.local",
+    password: process.env.FREE_USER_PASSWORD || "Free123!",
+  },
 };
 
 export function requireEnv(name: string): string {

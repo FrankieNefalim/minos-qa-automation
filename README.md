@@ -26,7 +26,7 @@ npm run report        # abre el último reporte HTML de Playwright
 npm run allure:report # genera y abre el reporte de Allure
 ```
 
-> ⚠️ **Rate limit de login**: `/auth/login` en MINOS permite 5 intentos por minuto (por IP+email) — es una protección real del backend, no algo para debilitar. Una corrida completa de la suite usa 3 de esos 5 (login de UI, el test de login inválido, y el token de API). Si corrés la suite dos veces seguidas en menos de un minuto, la segunda puede toparse con el límite — `auth.setup.ts` y `support/apiClient.ts` ya reintentan con backoff, pero si corrés todo muy seguido igual puede fallar. Esperá ~60s entre corridas completas si estás iterando rápido.
+> ⚠️ **Rate limit de login**: `/auth/login` en MINOS permite 5 intentos por minuto (por IP+email) — es una protección real del backend, no algo para debilitar. Una corrida completa de la suite usa 5 de esos 5: login de UI del owner PRO, login de UI de `free@qapal.local` (`authFree.setup.ts`), el test de login inválido, el test de login válido, y el token de API. Está justo en el límite — si corrés la suite dos veces seguidas en menos de un minuto, la segunda muy probablemente choca contra el límite en alguno de esos cinco. `auth.setup.ts`/`authFree.setup.ts` y `support/apiClient.ts` ya reintentan con backoff (por eso una corrida "flaky" casi siempre se recupera sola), pero si corrés todo muy seguido igual puede fallar. Esperá ~60s entre corridas completas si estás iterando rápido.
 
 ## Reporte con Allure
 
@@ -48,17 +48,20 @@ Todos los métodos públicos de los Page Objects (`pages/*.ts`) y del cliente de
 
 ```
 tests/
-  auth.setup.ts               → loguea una vez por UI y guarda la sesión (storageState)
+  auth.setup.ts               → loguea al owner PRO por UI y guarda la sesión (storageState)
+  authFree.setup.ts           → ídem, pero para free@qapal.local (el "miembro invitado" de los tests de rol)
   apiAuth.setup.ts            → pide un token de API una sola vez para toda la corrida
   auth/login.spec.ts          → prueba el login en sí (corre sin sesión previa)
   requirements/*.spec.ts      → crear + editar/borrar (requiere sesión, storageState)
   features/*.spec.ts          → ídem
   testsuites/*.spec.ts        → ídem
-  testruns/*.spec.ts          → solo crear (no hay UI de editar/borrar ejecuciones en MINOS)
+  testruns/*.spec.ts          → crear + ciclo de vida completo (iniciar/sincronizar/marcar resultado/finalizar)
   testcases/*.spec.ts         → crear + editar/borrar
   issues/*.spec.ts            → ídem
   testplans/*.spec.ts         → ídem
   notes/*.spec.ts             → ídem
+  projects/*.spec.ts          → crear/editar/borrar proyecto + invitar miembro
+  permissions/*.spec.ts       → qué ve/puede hacer cada rol (tester/builder/stakeholder) — corre logueado como free@qapal.local, no como el owner PRO
 pages/                        → Page Objects (un archivo por pantalla/componente de la app)
 fixtures/                     → fixtures de Playwright (datos de test vía API)
 support/
@@ -69,13 +72,17 @@ playwright/.auth/             → sesión + token guardados (gitignoreado, se re
 
 **Patrón de auth (UI)**: en vez de loguear por UI en cada test (lento), `auth.setup.ts` loguea una sola vez al arrancar la suite y guarda cookies/localStorage. Los tests bajo `chromium` arrancan directo con sesión activa. El propio flujo de login se prueba aparte, en el proyecto `chromium-no-auth`, que sí arranca sin sesión (ver `playwright.config.ts`).
 
+**Segunda identidad (`chromium-free-user`)**: los tests de permisos por rol necesitan ver la app como alguien que NO es el owner PRO — `authFree.setup.ts` loguea a `free@qapal.local` (el otro usuario seed) y guarda su propio storageState. El proyecto Playwright `chromium-free-user` lo usa y solo corre `tests/permissions/*.spec.ts` (`chromium` explícitamente los ignora, para no correrlos dos veces). Cada test de esa carpeta crea su propio proyecto por API (como owner, vía `apiClient`) e invita a `free@qapal.local` con el rol que quiere probar antes de interactuar con la UI ya logueada como ese usuario.
+
 **Patrón de auth (API)**: `apiAuth.setup.ts` pide un access_token una sola vez y lo guarda en `playwright/.auth/api-token.json`. El fixture `apiClient` (worker-scoped, en `fixtures/testProject.fixture.ts`) lo lee de ahí en vez de loguear de nuevo por worker — clave para no chocar con el rate-limit cuando corren varios workers en paralelo.
 
 **Patrón de datos de test**: para tests que necesitan un proyecto/feature/suite ya creados, no dependas de datos cargados a mano en la cuenta de demo — usá el fixture `testProject` (`fixtures/testProject.fixture.ts`), que crea un proyecto + feature + test suite por API antes del test y borra el proyecto después. Mantiene los tests independientes entre sí y repetibles. Los códigos de proyecto se generan al azar (con reintento si chocan) porque MINOS deriva el código del nombre y lo trunca a 2 caracteres — dos proyectos con nombres parecidos pueden derivar el mismo código.
 
 ## Nota sobre selectores: `data-testid`
 
-Los componentes de formulario compartidos de MINOS (`InputField`, `TextareaField`, `SelectField`, `ButtonPrimary`, `ButtonSecondary`, `ButtonDanger`, `TagsInput`, y las acciones de `Modal`/`ConfirmationModal`) soportan `data-testid` — se agregó como parte de esta suite, porque los inputs no asociaban `<label>` con `<input>` y no había forma estable de apuntarles sin depender de texto traducible o del orden de los campos. Las 8 entidades del producto (Requerimientos, Funcionalidades, Suites, Casos de Prueba, Ejecuciones, Issues, Planes de Prueba, Notas) están instrumentadas para crear/editar/borrar (Ejecuciones solo tiene "crear": MINOS no tiene UI de edición ni borrado para esa entidad, es un registro de ejecución). `TestCaseForm` (el form más grande de la app) está completamente instrumentado, aunque los tests hoy solo ejercitan el camino mínimo (título + un paso).
+Los componentes de formulario compartidos de MINOS (`InputField`, `TextareaField`, `SelectField`, `ButtonPrimary`, `ButtonSecondary`, `ButtonDanger`, `TagsInput`, y las acciones de `Modal`/`ConfirmationModal`) soportan `data-testid` — se agregó como parte de esta suite, porque los inputs no asociaban `<label>` con `<input>` y no había forma estable de apuntarles sin depender de texto traducible o del orden de los campos. Las 8 entidades del producto (Requerimientos, Funcionalidades, Suites, Casos de Prueba, Ejecuciones, Issues, Planes de Prueba, Notas) están instrumentadas para crear/editar/borrar. `TestCaseForm` (el form más grande de la app) está completamente instrumentado, aunque los tests hoy solo ejercitan el camino mínimo (título + un paso). Proyectos (crear/editar/borrar), gestión de miembros (invitar/quitar/cambiar rol) y el ciclo de vida completo de una Ejecución (iniciar/sincronizar/marcar resultado/finalizar) también están instrumentados.
+
+Para las filas de resultados dentro de una Ejecución (`TestRunDetail.jsx`) no hay un id único por fila en el DOM — cada `<li>` lleva `data-testid="testrun-result-row"` (no único) y se escopea con `.filter({ hasText: tituloDelCaso })`, mismo patrón que las cards de Notas/Planes de Prueba.
 
 `RequirementsPage` y `LoginPage` usan atributos `name` (`input[name="title"]`) para los campos de texto porque esas dos pantallas ya eran estables así antes de sumar `data-testid`; sus botones de acción (editar/borrar en el listado) sí usan `data-testid`. Igual con `TestPlansPage`: el form de alta/edición usa `name`, pero las acciones del listado usan `data-testid`. Si tocás alguna de estas pantallas, considerá migrar los campos de texto a `data-testid` para que todo el repo siga un solo patrón.
 
@@ -98,15 +105,16 @@ Automatizar esto encontró 4 bugs genuinos de la app, no errores de los tests:
 3. **Borrar un proyecto con casos de prueba, planes, ejecuciones, issues o notas tiraba 500** — esas 5 tablas no tenían `ON DELETE CASCADE` hacia `projects` (a diferencia de `features`/`requirements`, que sí).
 4. **Borrar un caso de prueba desde el listado pedía confirmar dos veces** — `TestCaseList.jsx` mostraba su propio `useConfirm()` antes de llamar al DELETE, pero el `ActionButtons` compartido que renderiza el botón *también* pide confirmación antes de invocar `onDelete`. El primer clic en "Eliminar" solo cerraba el primer diálogo y abría uno idéntico por debajo; recién el segundo clic borraba de verdad. Se sacó la confirmación duplicada de `TestCaseList` y se le pasó el mensaje específico a `ActionButtons` vía `confirmMessage`.
 
+Además, el test de crear proyecto destapó (no un bug de la app, pero sí una trampa real): el form de "Nuevo Proyecto" autosugiere la sigla a partir de las primeras letras del nombre, así que dos proyectos con nombres que empiezan igual (ej. "Proyecto borrable ..." en corridas distintas) derivan la misma sigla de 2 caracteres y el backend rechaza la segunda creación ("A project with code 'X' already exists"). `ProjectsPage.createProject` ahora sobreescribe la sigla con un código al azar antes de enviar, igual que ya hacía `ApiClient.createProject` para los proyectos creados por API.
+
 ## Sobre la concurrencia entre tests
 
 Todos los tests pegan contra la misma cuenta de demo compartida (`pro@qapal.local`). Con 3 workers en paralelo, de vez en cuando hay contención puntual (ej. generación de key por proyecto) que hace fallar un test de forma transitoria — no es un bug de la app ni del test, así que `playwright.config.ts` tiene `retries: 1` en local (2 en CI) para absorber eso. Si un test falla dos veces seguidas, ahí sí es señal de algo real.
 
 ## Pendiente / ideas para crecer esto
 
-- Gestión de proyecto por UI: crear/editar proyecto, invitar miembro.
-- Tests de permisos por rol (tester/builder/stakeholder, no solo el owner Pro).
-- Ciclo de vida de una Ejecución: marcar resultado de un caso, finalizar la ejecución.
+- Permisos por rol: la cobertura actual verifica un puñado de elementos clave por rol (nav de Funcionalidades/Ejecuciones, botón "Nuevo Requerimiento", botón "Nuevo Issue"). Falta el resto de la matriz en `frontend/src/lib/permissions.js` (Planes de Prueba, Suites, Notas, gestión de miembros como no-manager, etc.).
 - Flujos con IA (generación de casos/issues) — quedan afuera por ahora porque consumen créditos reales.
+- Flujo de invitación por email/token completo (`AcceptInvitePage.jsx`, vía MailHog) — hoy el test de invitar miembro usa el atajo de "usuario ya existente" (alta directa, sin pasar por email), que cubre el caso más común pero no ese flujo.
 - CI: correr `npm test` en GitHub Actions contra un `docker compose up` efímero.
 - Cross-browser: ya está preparado en `playwright.config.ts` (proyectos de firefox/webkit comentados), solo hay que descomentar.
